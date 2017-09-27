@@ -153,13 +153,13 @@ TCsvDS::TCsvDS(std::string_view fileName, bool readHeaders, char delimiter) // T
       GenerateHeaders(fRecords[0].size());
    }
 
-   for (auto &header : fHeaders)
+   /*for (auto &header : fHeaders)
       std::cout << fColTypes[header] << ",";
    std::cout << std::endl;
    
    for (auto &header : fHeaders)
       std::cout << header << ",";
-   std::cout << std::endl;
+   std::cout << std::endl;*/
 
    /*for (auto &r : fRecords) {
       for (auto &s : r)
@@ -222,7 +222,7 @@ void TCsvDS::SetEntry(unsigned int slot, ULong64_t entry)
    
    for (auto i : ROOT::TSeqU(nColumns)) {
       // Update the address of every column of the slot to point to the record
-      fColAddresses[i][slot] = &fRecords[entry][i];
+      fColAddresses[i][slot] = fRecords[entry][i];
    }
 }
 
