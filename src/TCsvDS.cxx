@@ -18,6 +18,53 @@ std::regex TCsvDS::boolRegex("^(true|false)$", std::regex_constants::ECMAScript 
 std::regex TCsvDS::quotedRegex("^\"[^\"].*[^\"]\"$");
 
 
+void TCsvDS::FillHeaders(std::string& line)
+{
+   std::istringstream lineStream(line);
+   std::string col;
+   while (std::getline(lineStream, col, fDelimiter)) {
+      fHeaders.emplace_back(col);
+   }
+}
+
+void TCsvDS::FillRecord(std::string& line, Record& record)
+{
+   std::istringstream lineStream(line);
+   auto i = 0U;
+
+   auto parsedCols = ParseColumns(line);
+
+   for (auto &col : parsedCols) {
+      auto &colType = fColTypes[fHeaders[i]];
+      
+      if (colType == "int") {
+         record.emplace_back(new int(std::stoi(col))); // TODO: LONG?
+      }
+      else if (colType == "double") {
+         record.emplace_back(new double(std::stod(col)));
+      }
+      else if (colType == "bool") {
+         bool *b = new bool();
+         record.emplace_back(b);
+         // Ignore case, just like boolRegex
+         std::transform(col.begin(), col.end(), col.begin(), ::tolower);
+         std::istringstream is(col);
+         is >> std::boolalpha >> *b;
+      }
+      else {
+         record.emplace_back(new std::string(col));
+      }
+      ++i;
+   }
+}
+
+void TCsvDS::GenerateHeaders(size_t size)
+{
+   for (size_t i = 0; i < size; ++i) {
+      fHeaders.push_back("Col" + std::to_string(i));
+   }
+}
+
 std::vector<void *> TCsvDS::GetColumnReadersImpl(std::string_view colName, const std::type_info &)
 {
    const auto &colNames = GetColumnNames();
@@ -36,43 +83,13 @@ std::vector<void *> TCsvDS::GetColumnReadersImpl(std::string_view colName, const
    return ret;
 }
 
-
-void TCsvDS::FillHeaders(std::string& line)
-{
-   std::istringstream lineStream(line);
-   std::string col;
-   while (std::getline(lineStream, col, fDelimiter)) {
-      fHeaders.emplace_back(col);
-   }
-}
-
-void TCsvDS::FillRecord(std::string& line, Record& record)
+void TCsvDS::InferColTypes(std::string &line)
 {
    std::istringstream lineStream(line);
    std::string col;
    auto i = 0U;
    while (std::getline(lineStream, col, fDelimiter)) {
-      auto &colType = fColTypes[fHeaders[i]];
-      
-      if (std::regex_match(col, quotedRegex)) { // TODO: Do this while parsing
-         col = col.substr(1, col.size() - 2);
-      }
-
-      if (colType == "int") {
-         record.emplace_back(new int(std::stoi(col))); // OVERFLOW?
-      }
-      else if (colType == "double") {
-         record.emplace_back(new double(std::stod(col)));
-      }
-      else if (colType == "bool") {
-         bool *b = new bool();
-         record.emplace_back(b);
-         std::istringstream is(col);
-         is >> std::boolalpha >> *b; // TODO: what if it is not "true" or "false"?
-      }
-      else {
-         record.emplace_back(new std::string(col)); // TODO: remove quotes
-      }
+      InferType(col, i);
       ++i;
    }
 }
@@ -96,26 +113,47 @@ void TCsvDS::InferType(std::string &col, unsigned int idxCol) {
    else { // everything else is a string
       type = "std::string";
    }
+   // TODO: Date
 
    fColTypes[fHeaders[idxCol]] = type;
 }
 
-void TCsvDS::InferColTypes(std::string &line)
-{
-   std::istringstream lineStream(line);
-   std::string col;
-   auto i = 0U;
-   while (std::getline(lineStream, col, fDelimiter)) {
-      InferType(col, i);
-      ++i;
+std::vector<std::string> TCsvDS::ParseColumns(std::string &line) {
+   std::vector<std::string> columns;
+
+   for (size_t i = 0; i < line.size(); ++i) {
+     i = ParseValue(line, columns, i);
    }
+
+   return columns;
 }
 
-void TCsvDS::GenerateHeaders(size_t size)
+size_t TCsvDS::ParseValue(std::string &line, std::vector<std::string> &columns, size_t i)
 {
-   for (size_t i = 0; i < size; ++i) {
-      fHeaders.push_back("Col" + std::to_string(i));
+   std::stringstream val;
+   bool quoted = false;
+   
+   for (; i < line.size(); ++i) {
+      if (line[i] == fDelimiter && !quoted) {
+         break;
+      }
+      else if (line[i] == '"') {
+         // Keep just one quote for escaped quotes, none for the normal quotes
+         if (line[i + 1] != '"') {
+            quoted = !quoted;
+         }
+         else {
+            val << line[++i];
+         }
+      }
+      else {
+         val << line[i];
+      }
    }
+
+   columns.emplace_back(val.str());
+
+   return i;
 }
 
 TCsvDS::TCsvDS(std::string_view fileName, bool readHeaders, char delimiter) // TODO: Let users specify types?
@@ -142,30 +180,16 @@ TCsvDS::TCsvDS(std::string_view fileName, bool readHeaders, char delimiter) // T
       FillRecord(line, fRecords.back());
    }
 
-   // Read the rest of the records
+   // Read all records and store them in memory
    while (std::getline(stream, line)) {
       fRecords.emplace_back();
       FillRecord(line, fRecords.back());
    }
 
-   // Generate headers if not provided in the CSV
+   // Generate headers if not provided in the CSV file
    if (!fRecords.empty() && !readHeaders) {
       GenerateHeaders(fRecords[0].size());
    }
-
-   /*for (auto &header : fHeaders)
-      std::cout << fColTypes[header] << ",";
-   std::cout << std::endl;
-   
-   for (auto &header : fHeaders)
-      std::cout << header << ",";
-   std::cout << std::endl;*/
-
-   /*for (auto &r : fRecords) {
-      for (auto &s : r)
-         std::cout << s << ",";
-      std::cout << std::endl;
-   }*/
 }
 
 TCsvDS::~TCsvDS()
@@ -191,6 +215,16 @@ TCsvDS::~TCsvDS()
    }
 }
 
+const std::vector<std::string> &TCsvDS::GetColumnNames() const
+{
+   return fHeaders;
+}
+
+const std::vector<std::pair<ULong64_t, ULong64_t>> &TCsvDS::GetEntryRanges() const
+{
+   return fEntryRanges;
+}
+
 std::string TCsvDS::GetTypeName(std::string_view colName) const
 {
    if (!HasColumn(colName)) {
@@ -201,19 +235,9 @@ std::string TCsvDS::GetTypeName(std::string_view colName) const
    return fColTypes.at(colName.data());
 }
 
-const std::vector<std::string> &TCsvDS::GetColumnNames() const
-{
-   return fHeaders;
-}
-
 bool TCsvDS::HasColumn(std::string_view colName) const
 {
    return fHeaders.end() != std::find(fHeaders.begin(), fHeaders.end(), colName);
-}
-
-const std::vector<std::pair<ULong64_t, ULong64_t>> &TCsvDS::GetEntryRanges() const
-{
-   return fEntryRanges;
 }
 
 void TCsvDS::SetEntry(unsigned int slot, ULong64_t entry)

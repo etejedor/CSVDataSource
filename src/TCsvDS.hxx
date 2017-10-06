@@ -4,7 +4,6 @@
 #include "ROOT/TDataSource.hxx"
 
 #include <map>
-#include <fstream>
 #include <vector>
 #include <regex>
 
@@ -13,6 +12,7 @@ namespace Experimental {
 namespace TDF {
 
 class TCsvDS final : public ROOT::Experimental::TDF::TDataSource {
+
 private:
    typedef std::vector<void *> Record;
 
@@ -21,29 +21,28 @@ private:
    char fDelimiter;
    std::vector<std::string> fHeaders;
    std::map<std::string, std::string> fColTypes;
-
-   std::vector<std::vector<void *>> fColAddresses; // first container-> slot, second -> column;
+   std::vector<std::vector<void *>> fColAddresses; // fColAddresses[column][slot]
    std::vector<std::pair<ULong64_t, ULong64_t>> fEntryRanges;
-
-   std::vector<Record> fRecords; // first container-> record, second -> column;
+   std::vector<Record> fRecords; // fRecords[entry][column]
 
    static std::regex intRegex, doubleRegex, boolRegex, quotedRegex;
    
-   std::vector<void *> GetColumnReadersImpl(std::string_view, const std::type_info &);
    void FillHeaders(std::string&);
    void FillRecord(std::string&, Record&);
    void GenerateHeaders(size_t);
+   std::vector<void *> GetColumnReadersImpl(std::string_view, const std::type_info &);
    void InferColTypes(std::string&);
    void InferType(std::string&, unsigned int);
-
+   std::vector<std::string> ParseColumns(std::string&);
+   size_t ParseValue(std::string&, std::vector<std::string>&, size_t);
 
 public:
    TCsvDS(std::string_view fileName, bool readHeaders = false, char delimiter = ',');
    ~TCsvDS();
-   std::string GetTypeName(std::string_view colName) const;
    const std::vector<std::string> &GetColumnNames() const;
-   bool HasColumn(std::string_view colName) const;
    const std::vector<std::pair<ULong64_t, ULong64_t>> &GetEntryRanges() const;
+   std::string GetTypeName(std::string_view colName) const;
+   bool HasColumn(std::string_view colName) const;
    void SetEntry(unsigned int slot, ULong64_t entry);
    void SetNSlots(unsigned int nSlots);
 };
